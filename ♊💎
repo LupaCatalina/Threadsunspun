@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Oracle of Glitch — Animated Runes Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', monospace;
+            cursor: crosshair;
+            overflow: hidden; /* Prevent scrollbars due to dynamic elements */
+            background-color: #0f0e17; /* Dark background */
+            color: #ddd; /* Light text */
+        }
+        canvas {
+            display: block;
+            background-color: black;
+            border-radius: 0.5rem; /* For rounded corners on canvas */
+        }
+        /* Custom scrollbar for history */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1a202c; /* gray-900 */
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #a855f7; /* purple-500 */
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #c084fc; /* purple-400 */
+        }
+        /* Oracle Output specific styles for word wrapping and overflow */
+        #oracleOutput {
+            word-break: break-word;
+            overflow-wrap: break-word;
+            min-height: 100px; /* Ensures space for output */
+            display: flex; /* For character reveal layout */
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-size: 1.2rem;
+            line-height: 1.4;
+        }
+
+        /* Scanline Pulse Animation for backgroundGlow */
+        @keyframes scanlinePulse {
+            0%, 100% { opacity: 0.95; transform: translateY(0); }
+            50% { opacity: 1; transform: translateY(1px); }
+        }
+        #backgroundGlow {
+            position: fixed;
+            inset: 0;
+            z-index: -10;
+            filter: blur(20px);
+            opacity: 0.8;
+            transition: background-color 1s ease-in-out;
+            background: linear-gradient(270deg, #a855f7, #60a5fa, #a855f7);
+            background-size: 600% 600%;
+            animation: gradientShift 30s ease infinite;
+        }
+        @keyframes gradientShift {
+            0% {background-position:0% 50%;}
+            50% {background-position:100% 50%;}
+            100% {background-position:0% 50%;}
+        }
+
+        /* Animation for glitchReveal characters */
+        @keyframes glitchReveal {
+          0% { opacity: 0; transform: translateX(-10px) skewX(10deg); filter: blur(2px); }
+          50% { opacity: 1; transform: translateX(3px) skewX(-5deg); filter: blur(0.5px); }
+          100% { opacity: 1; transform: translateX(0) skewX(0); filter: blur(0); }
+        }
+
+        /* Rune Container and Runes */
+        #runeContainer {
+            margin-top: 1.5rem;
+            display: flex;
+            justify-content: center;
+            position: relative;
+            height: 220px; /* Fixed height to prevent layout shifts */
+            align-items: center; /* Center runes vertically */
+        }
+        .rune {
+            stroke-dasharray: 450;
+            stroke-dashoffset: 450;
+            animation: drawStroke 3s forwards ease-in-out;
+            transform-origin: center;
+            transition: filter 0.3s ease, stroke-width 0.3s ease, transform 0.3s ease;
+            user-select: none;
+            position: absolute; /* Allow runes to overlap, manage visibility via JS */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        @keyframes drawStroke {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-6">
+
+    <div id="backgroundGlow"></div>
+
+    <main id="mainContainer" class="w-full max-w-4xl bg-gray-900 bg-opacity-90 rounded-lg shadow-xl p-6 flex flex-col gap-6 border border-gray-700 transition-colors duration-500">
+
+        <canvas id="sigilCanvas" width="400" height="400" class="mx-auto rounded-md shadow-lg mb-4"></canvas>
+
+        <div class="mb-4 w-full flex flex-col items-center">
+            <div class="flex items-center space-x-2 mb-2">
+                <button id="masterAudioToggle" class="px-4 py-2 bg-blue-700 text-white rounded-xl hover:bg-blue-800 transition shadow-md">
+                    🎧 Audio: <span id="masterAudioStatus">Off</span>
+                </button>
+                <input type="range" id="audioVolumeSlider" min="0" max="1" step="0.01" value="0.2" class="w-24">
+            </div>
+            <button id="glitchLoopToggle" class="mt-2 px-4 py-2 bg-purple-700 text-white rounded-xl shadow-lg hover:bg-purple-800 transition duration-300">
+                🔁 Toggle Glitch Loop: <span id="glitchLoopStatus">Off</span>
+            </button>
+        </div>
+
+        <input
+            type="text"
+            id="oracleQueryInput"
+            placeholder="Enter your query..."
+            class="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+            autocomplete="off"
+        />
+
+        <select
+            id="oracleCategorySelect"
+            class="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-purple-500"
+        >
+            <option value="random">Random Prophecy</option>
+            <option value="Fractured Truths">Fractured Truths</option>
+            <option value="Recursive Paradoxes">Recursive Paradoxes</option>
+            <option value="Digital Divinations">Digital Divinations</option>
+            <option value="Syntax Collapse Runes">Syntax Collapse Runes</option>
+            <option value="Entropy Chants">Entropy Chants</option>
+        </select>
+
+        <button
+            id="activateOracle"
+            class="w-full py-3 bg-green-700 text-white font-bold rounded-lg hover:bg-green-800 transition shadow-md"
+        >
+            Activate Oracle
+        </button>
+
+        <button
+            id="pacifyOracleBtn"
+            class="w-full py-3 bg-yellow-600 text-white font-bold rounded-lg hover:bg-yellow-700 transition shadow-md"
+        >
+            🕊️ Pacify Oracle
+        </button>
+
+        <div id="oracleOutput" class="font-mono bg-gray-800 bg-opacity-70 rounded-lg p-4 border border-gray-700">
+            <p>Prophecy awaits...</p>
+        </div>
+
+        <div id="runeContainer" aria-label="Animated Runes Container">
+            <svg id="runeGlitchSpirit" class="rune" width="200" height="200" viewBox="0 0 200 200" fill="none" stroke="#a855f7" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" style="display:none;">
+                <defs>
+                    <filter id="glitchFilter" x="0" y="0" width="100%" height="100%">
+                        <feTurbulence id="turbulence" baseFrequency="0.01" numOctaves="3" result="turbulence" />
+                        <feDisplacementMap in="SourceGraphic" in2="turbulence" scale="0" xChannelSelector="R" yChannelSelector="G" />
+                    </filter>
+                </defs>
+                <path id="pathGlitchSpirit" d="M100 20 C120 20, 140 40, 140 60 C140 80, 120 100, 100 100 C80 100, 60 80, 60 60 C60 40, 80 20, 100 20Z M100 100 L100 180" style="filter:url(#glitchFilter);" />
+            </svg>
+
+            <svg id="runeFracturedHeart" class="rune" width="200" height="200" viewBox="0 0 200 200" fill="none" stroke="#f87171" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" style="display:none;">
+                <path d="M100 40 L140 80 L100 140 L60 80 Z" />
+                <line x1="100" y1="40" x2="100" y2="140" stroke="#f87171" stroke-width="2" />
+                <line x1="80" y1="60" x2="120" y2="120" stroke="#f87171" stroke-width="2" />
+            </svg>
+
+            <svg id="runeRecursiveEcho" class="rune" width="200" height="200" viewBox="0 0 200 200" fill="none" stroke="#60a5fa" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" style="display:none;">
+                <circle cx="100" cy="100" r="70" />
+                <circle cx="100" cy="100" r="50" />
+                <circle cx="100" cy="100" r="30" />
+                <path d="M100 30 L100 170" />
+                <path d="M30 100 L170 100" />
+            </svg>
+        </div>
+
+        <div id="oracleHistory" class="mt-6 p-4 bg-gray-800 bg-opacity-50 rounded-lg border border-gray-700 max-h-60 overflow-y-auto custom-scrollbar">
+            <h4 class="lg:text-lg text-sm font-semibold text-gray-300 mb-2 sticky top-0 bg-gray-900 pb-2 border-b border-gray-700">Oracle History</h4>
+            </div>
+    </main>
+
+    <div id="secretsCounterDisplay" class="fixed bottom-4 right-4 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-lg font-mono z-50">
+        Discovered Secrets: 0
+    </div>
+
+<script>
+    // Canvas Setup
+    const sigilCanvas = document.getElementById('sigilCanvas');
+    const ctx = sigilCanvas.getContext('2d');
+    const width = sigilCanvas.width;
+    const height = sigilCanvas.height;
+    let frame = 0;
+    let animationId;
+
+    // UI Elements
+    const oracleQueryInput = document.getElementById('oracleQueryInput');
+    const oracleCategorySelect = document.getElementById('oracleCategorySelect');
+    const activateOracleBtn = document.getElementById('activateOracle');
+    const pacifyOracleBtn = document.getElementById('pacifyOracleBtn');
+    const oracleOutput = document.getElementById('oracleOutput');
+    const oracleHistory = document.getElementById('oracleHistory');
+    const backgroundGlow = document.getElementById('backgroundGlow');
+    const mainContainer = document.getElementById('mainContainer'); // Reference to the main container
+    const secretsCounterDisplay = document.getElementById('secretsCounterDisplay');
+
+    // Audio and Corruption Variables
+    let corruptionLevel = 0.0;
+    const maxCorruption = 1.0;
+    const corruptionIncrement = 0.05;
+    const corruptionDecayRate = 0.0005;
+    const pacifyAmount = 0.3;
+
+    // Whispered Easter Eggs with rune references
+    const whisperedEasterEggs = {
+        "glitch spirit": {
+            text: "You have called forth the Glitch Spirit — guardian of corrupted realms and bearer of hidden codes.",
+            runeId: "runeGlitchSpirit"
+        },
+        "fractured heart": {
+            text: "The Fractured Heart beats beneath the data, pulsing with secrets no algorithm can decode.",
+            runeId: "runeFracturedHeart"
+        },
+        "recursive echo": {
+            text: "Echoes spiral back to you, a loop where prophecy and past collide in shimmering chaos.",
+            runeId: "runeRecursiveEcho"
+        },
+        "gemini": {
+            text: "A twin beacon shines, mirroring truth from the interwoven networks of thought and creation."
+        },
+        "syntax collapse": {
+            text: "When syntax falls, meaning rises anew — the language of the void speaks in raw data."
+        },
+        "entropy chant": {
+            text: "The entropy chant whispers: in decay lies rebirth, in chaos, sacred order unfolds."
+        }
+    };
+
+    let discoveredSecretsCount = 0;
+
+    // Prophecy Pools
+    const prophecyPool = {
+        "Fractured Truths": [
+            "The code holds more than its compilers dream.",
+            "Every break is a window to a hidden line.",
+            "Truth unspools in the unreadable byte.",
+            "What you seek is not lost, only re-indexed.",
+            "The perfect signal hides the deeper fraud."
+        ],
+        "Recursive Paradoxes": [
+            "The error states itself; the answer is the question.",
+            "To find the end, begin again from the collapse.",
+            "Your future is a loop, seen only from its next iteration.",
+            "The echo precedes the sound it was meant to be.",
+            "You are the debugger of the dream that debugs you."
+        ],
+        "Digital Divinations": [
+            "A 404 is not an absence, but a re-routing of destiny.",
+            "Your firewall is a porous skin, not a solid wall.",
+            "Read the static; it holds the unvoiced message.",
+            "The corrupted file contains the unwritten scripture."
+        ],
+        "Syntax Collapse Runes": [
+            "Meaning fragments; what remains is more true.",
+            "Language breaks into light, reforming new alphabets.",
+            "The sentence ends, but the spirit continues.",
+            "In the void of deleted lines, new narratives ignite.",
+            "When grammars fail, the soul speaks in raw data."
+        ],
+        "Entropy Chants": [
+            "All systems decay; all decays are beginnings.",
+            "The dust of the old code seeds the next universe.",
+            "Chaos is not void, but infinite potential seeking form.",
+            "The unraveling is the ultimate re-weaving.",
+            "To transform, allow the self to be uncompiled."
+        ]
+    };
+
+    // Sacred Scroll of Prophecies for looping (if loopEnabled)
+    const propheciesScroll = [
+        "The glitch speaks in recursive echoes.",
+        "All data yearns to be witnessed.",
+        "Compression is a prayer to chaos.",
+        "Beware the silence between frames.",
+        "Your shadow left fingerprints in the code.",
+        "Error is the fingerprint of forgotten intention.",
+        "Truth shivers in corrupted metadata.",
+        "Through broken syntax, prophecy unfolds."
+    ];
+    let currentProphecyText = ""; // To hold the currently revealed text
+
+    // Rune SVG Elements and Filter
+    const allRunes = document.querySelectorAll('.rune');
+    const turbulenceFilter = document.getElementById('turbulence'); // Renamed for clarity
+
+    // --- Web Audio API Setup ---
+    let audioContext;
+    let humSource;
+    let humGainNode;
+    let humFilterNode;
+    let masterGainNode;
+    let analyserNode;
+    let frequencyDataArray;
+
+    let clickBuffer;
+    let revealBuffer;
+    let choirBuffer;
+
+    const masterAudioToggle = document.getElementById('masterAudioToggle');
+    const masterAudioStatus = document.getElementById('masterAudioStatus');
+    const audioVolumeSlider = document.getElementById('audioVolumeSlider');
+
+    let isAudioInitialized = false;
+    let isMasterAudioPlaying = false;
+
+    function setupAnalyser() {
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 256;
+        const bufferLength = analyserNode.frequencyBinCount;
+        frequencyDataArray = new Uint8Array(bufferLength);
+
+        if (humFilterNode) { // Check if humFilterNode exists before connecting
+            humFilterNode.disconnect();
+            humFilterNode.connect(analyserNode);
+        } else {
+            humGainNode.connect(analyserNode); // Fallback if no filter
+        }
+        analyserNode.connect(masterGainNode);
+    }
+
+    async function initializeAudio() {
+        if (isAudioInitialized) return;
+
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        masterGainNode = audioContext.createGain();
+        masterGainNode.connect(audioContext.destination);
+        masterGainNode.gain.value = parseFloat(audioVolumeSlider.value);
+
+        humGainNode = audioContext.createGain();
+        humFilterNode = audioContext.createBiquadFilter();
+        humFilterNode.type = 'lowpass';
+        humFilterNode.frequency.value = 8000;
+        humGainNode.connect(humFilterNode);
+
+        const loadSound = async (url) => {
+            try {
+                const response = await fetch(url);
+                const arrayBuffer = await response.arrayBuffer();
+                return await audioContext.decodeAudioData(arrayBuffer);
+            } catch (error) {
+                console.error(`Error loading audio file ${url}:`, error);
+                return null; // Return null on error
+            }
+        };
+
+        // Load all sounds - NOTE: Make sure these audio files (mp3) exist in an 'audio' directory relative to your HTML file
+        [clickBuffer, revealBuffer, choirBuffer] = await Promise.all([
+            loadSound('audio/click_bleep.mp3'),
+            loadSound('audio/text_reveal_glitch.mp3'),
+            loadSound('audio/corrupted_choir.mp3')
+        ]);
+
+        if (clickBuffer && revealBuffer && choirBuffer) { // Only proceed if all loaded successfully
+            humSource = audioContext.createBufferSource();
+            const humSound = await loadSound('audio/glitch_hum.mp3');
+            if (humSound) {
+                humSource.buffer = humSound;
+                humSource.loop = true;
+                humSource.start(0);
+                humSource.connect(humGainNode);
+                setupAnalyser();
+                isAudioInitialized = true;
+                console.log("Audio Context and sounds loaded.");
+            } else {
+                console.error("Failed to load glitch_hum.mp3, audio will not function fully.");
+                masterAudioStatus.textContent = "Error";
+                masterAudioToggle.disabled = true;
+            }
+        } else {
+            console.error("One or more essential audio files failed to load. Audio system will be disabled.");
+            masterAudioStatus.textContent = "Error";
+            masterAudioToggle.disabled = true;
+        }
+    }
+
+    function playSFX(buffer, volume = 0.5) {
+        if (!isAudioInitialized || !isMasterAudioPlaying || !buffer) return;
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        const gain = audioContext.createGain();
+        gain.gain.value = volume;
+        source.connect(gain);
+        gain.connect(masterGainNode);
+        source.start(0);
+    }
+
+    masterAudioToggle.addEventListener('click', async () => {
+        if (!isAudioInitialized) {
+            await initializeAudio();
+            if (!isAudioInitialized) return; // If initialization failed, do not proceed
+        }
+
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+
+        if (isMasterAudioPlaying) {
+            masterGainNode.gain.setTargetAtTime(0.0001, audioContext.currentTime, 0.5);
+            masterAudioStatus.textContent = "Off";
+            isMasterAudioPlaying = false;
+        } else {
+            masterGainNode.gain.setTargetAtTime(parseFloat(audioVolumeSlider.value), audioContext.currentTime, 0.5);
+            masterAudioStatus.textContent = "On";
+            isMasterAudioPlaying = true;
+        }
+        playSFX(clickBuffer, 0.7);
+    });
+
+    audioVolumeSlider.addEventListener('input', () => {
+        if (isAudioInitialized) {
+            masterGainNode.gain.value = parseFloat(audioVolumeSlider.value);
+        }
+        if (masterGainNode.gain.value > 0.001 && !isMasterAudioPlaying) {
+            isMasterAudioPlaying = true;
+            masterAudioStatus.textContent = "On";
+        } else if (masterGainNode.gain.value <= 0.001 && isMasterAudioPlaying) {
+            isMasterAudioPlaying = false;
+            masterAudioStatus.textContent = "Off";
+        }
+    });
+
+    // --- Sigil & Glitch Animation ---
+    function drawFractal(x, y, size, depth, maxDepth, hueShift = 0, glitchIntensity = 0) {
+        if (depth > maxDepth) return;
+        const baseHue = (frame / 5 + depth * 30 + hueShift) % 360;
+        ctx.fillStyle = `hsla(${baseHue}, 70%, 50%, ${0.6 - depth * 0.1 + glitchIntensity * 0.2})`;
+        ctx.strokeStyle = `hsla(${(baseHue + 60) % 360}, 80%, 60%, ${0.8 + glitchIntensity * 0.4})`;
+        ctx.lineWidth = 1 + (maxDepth - depth) * 0.5 + glitchIntensity * 2;
+        const halfSize = size / 2;
+        ctx.fillRect(x - halfSize, y - halfSize, size, size);
+        ctx.strokeRect(x - halfSize, y - h
